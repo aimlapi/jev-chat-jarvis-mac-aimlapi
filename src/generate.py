@@ -46,6 +46,12 @@ DEFAULT_OPENAI_BASE = "https://api.openai.com/v1"
 DEFAULT_ANTHROPIC_BASE = "https://api.anthropic.com"
 MISSING_HINT = ("未配置生成层 Key：候选回复需要它，判断/风险不需要。"
                 "设置 OPENAI_API_KEY（或 ANTHROPIC_API_KEY）后重启，见 README 配置章节。")
+# AI/ML API（https://aimlapi.com）：OpenAI 兼容的聚合服务，一把 AIMLAPI_API_KEY 用多家模型。
+# 地址固定为官方主机：这组 key 只会发往 api.aimlapi.com，填了别的地址也不跟着走。
+AIMLAPI_BASE = "https://api.aimlapi.com/v1"
+AIMLAPI_HOST = "api.aimlapi.com"
+# 非思考模型（生成层不能用思考型，见 ThinkingOnlyError）；实测中文短回复约 1 s
+AIMLAPI_DEFAULT_MODEL = "deepseek/deepseek-chat"
 # 用的是随包分发的凭据时报这个来源名，日志/--check 里能一眼分清「内置」和「你自己配的」
 BUILTIN_SOURCE = "内置默认"
 
@@ -116,6 +122,34 @@ class _KeepAlivePool:
 
 
 _POOL = _KeepAlivePool()
+
+
+def is_aimlapi_url(url: str) -> bool:
+    """True only for https on the exact AI/ML API host (no lookalike subdomains)."""
+    p = urllib.parse.urlsplit(url or "")
+    return p.scheme == "https" and (p.hostname or "").lower() == AIMLAPI_HOST
+
+
+def aimlapi_base(configured: str) -> str:
+    """AIMLAPI_BASE_URL is honoured only when it stays on the official host."""
+    return configured.rstrip("/") if configured and is_aimlapi_url(configured) else AIMLAPI_BASE
+
+
+class _RefuseRedirect(urllib.request.HTTPRedirectHandler):
+    """urllib's default handler re-sends Authorization to wherever a 30x points."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None          # -> the 30x surfaces as HTTPError, the key stays put
+
+
+_NO_REDIRECT = urllib.request.build_opener(_RefuseRedirect)
+
+
+def _open_stream(req: urllib.request.Request, timeout: float):
+    """Streaming opener. AI/ML API requests never follow redirects; others unchanged."""
+    if is_aimlapi_url(req.full_url):
+        return _NO_REDIRECT.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
 
 
 def http_post_json(url: str, headers: dict, body: dict, timeout: float) -> dict:
@@ -320,11 +354,14 @@ def load_credentials() -> tuple[str, str, str, str, str]:
     for other tools works here:
         OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL         the common case
         ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL / ANTHROPIC_MODEL
-    User credentials select the API shape by their prefix, including custom endpoints
+        AIMLAPI_API_KEY / AIMLAPI_MODEL                         AI/ML API, fixed host
+    OPENAI_* and ANTHROPIC_* keep priority, so adding AIMLAPI_API_KEY next to them
+    changes nothing. User credentials select the API shape by their prefix, including custom endpoints
     whose URL contains no provider name. Built-in credentials still infer from the URL.
     """
     oai = userconfig.provider("OPENAI")
     anth = userconfig.provider("ANTHROPIC")
+    aiml = userconfig.provider("AIMLAPI")
 
     if oai["key"]:
         base = oai["base"] or DEFAULT_OPENAI_BASE
@@ -332,6 +369,9 @@ def load_credentials() -> tuple[str, str, str, str, str]:
     if anth["key"]:
         base = anth["base"] or DEFAULT_ANTHROPIC_BASE
         return base, anth["key"], anth["model"] or DEFAULT_MODEL, anth["source"], "anthropic"
+    if aiml["key"]:
+        return (aimlapi_base(aiml["base"]), aiml["key"], aiml["model"] or AIMLAPI_DEFAULT_MODEL,
+                aiml["source"], "openai")
 
     # 两个都没配：回退到随包分发的内置凭据，让应用开箱就能出候选。位置在最后，
     # 所以内置永远不会盖掉用户显式配的那一组。
@@ -478,7 +518,7 @@ class Generator:
             url, data=json.dumps({**body, "stream": True}).encode(), headers=headers)
         content: list[str] = []
         reasoning: list[str] = []
-        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+        with _open_stream(req, self.timeout) as r:
             ctype = (r.headers.get("content-type") or "").lower()
             if "event-stream" not in ctype:
                 # the gateway took `stream: true` but answered with one JSON document:

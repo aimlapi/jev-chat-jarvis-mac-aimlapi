@@ -31,6 +31,9 @@ The names are the conventional ones you likely already export for other tools:
     ANTHROPIC_BASE_URL
     ANTHROPIC_MODEL
 
+    AIMLAPI_API_KEY      same job, via AI/ML API (https://api.aimlapi.com/v1, fixed host);
+    AIMLAPI_MODEL        used only when no OPENAI_* / ANTHROPIC_* key is set
+
     LLM_MODEL            shared model name, used when the per-provider one is absent
 """
 

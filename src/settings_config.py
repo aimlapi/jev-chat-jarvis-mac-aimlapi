@@ -15,15 +15,17 @@ import urllib.parse
 
 import userconfig
 from chat_context import message_limit
-from generate import _endpoint, base_is_verbatim_action, http_post_json, jev_request_url, Generator, ThinkingOnlyError
+from generate import (_endpoint, base_is_verbatim_action, http_post_json, is_aimlapi_url,
+                      jev_request_url, Generator, ThinkingOnlyError)
 import styles
 
-PREFIXES = ("TYPESAFE", "OPENAI", "ANTHROPIC")
+PREFIXES = ("TYPESAFE", "OPENAI", "ANTHROPIC", "AIMLAPI")
 FIELDS = ("API_KEY", "BASE_URL", "MODEL")
 DEFAULTS = {
     "TYPESAFE": ("https://api.typesafe.ai", "jev-latest"),
     "OPENAI": ("https://api.openai.com/v1", ""),
     "ANTHROPIC": ("https://api.anthropic.com", ""),
+    "AIMLAPI": ("https://api.aimlapi.com/v1", "deepseek/deepseek-chat"),
 }
 ASSIGNMENT = re.compile(r"^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z_0-9]*)(\s*=\s*)(.*)$")
 
@@ -93,9 +95,17 @@ def validate_endpoint(base: str) -> str:
     return base
 
 
+def validate_service_endpoint(prefix: str, base: str) -> str:
+    """validate_endpoint, plus: the AI/ML API key only ever goes to its own host."""
+    base = validate_endpoint(base)
+    if prefix == "AIMLAPI" and not is_aimlapi_url(base):
+        raise ValueError("AI/ML API 服务地址只能是 https://api.aimlapi.com/v1。")
+    return base
+
+
 def list_models(prefix: str, base: str, key: str) -> list[str]:
     """GET the provider's models endpoint. No presets, redirects or alternate service."""
-    base = validate_endpoint(base)
+    base = validate_service_endpoint(prefix, base)
     if not key:
         raise ValueError("请先填写密钥；Ollama 可填写 ollama。")
     if prefix == "TYPESAFE" and base_is_verbatim_action(base):
@@ -143,7 +153,7 @@ def list_models(prefix: str, base: str, key: str) -> list[str]:
 
 def test_connection(prefix: str, base: str, key: str, model: str, extra: dict | None = None) -> None:
     """Use exactly the unsaved form values; never fall back to built-in credentials."""
-    base = validate_endpoint(base)
+    base = validate_service_endpoint(prefix, base)
     if not key or not model.strip():
         raise ValueError("请填写密钥和模型后再测试。")
     if prefix == "TYPESAFE":

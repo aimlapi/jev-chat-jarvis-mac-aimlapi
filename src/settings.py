@@ -76,7 +76,7 @@ class SettingsController(NSObject):
         self.tabs = A.NSTabView.alloc().initWithFrame_(NSMakeRect(24, 184, 712, 326))
         if hasattr(self.tabs, "setDrawsBackground_"):
             self.tabs.setDrawsBackground_(False)
-        titles = ("判断 · Jev", "生成 · OpenAI 兼容", "生成 · Anthropic 兼容")
+        titles = ("判断 · Jev", "生成 · OpenAI 兼容", "生成 · Anthropic 兼容", "生成 · AI/ML API")
         for index, (prefix, title) in enumerate(zip(config.PREFIXES, titles)):
             item = A.NSTabViewItem.alloc().initWithIdentifier_(prefix)
             item.setLabel_(title)
@@ -135,6 +135,7 @@ class SettingsController(NSObject):
                     self.candidate_count.setToolTip_("由启动环境变量控制；修改环境变量后重启。")
             else:
                 hint = ("Jev 地址带不带 /v1 都行，网关动作不同时可填完整动作路径；列表接口不可用时可手填模型。" if prefix == "TYPESAFE"
+                        else "AI/ML API（aimlapi.com）：一个密钥用多家模型，OpenAI 格式，地址固定；请选非思考模型。" if prefix == "AIMLAPI"
                         else "使用 Anthropic 消息接口，支持自定义兼容服务地址。")
                 self.label(panel, hint, 26, 43, 638, 20, 11, PALETTE["muted"])
             for text, action, x in (("获取模型列表", "fetchModels:", 372), ("测试连接", "testConnection:", 524)):
@@ -161,7 +162,7 @@ class SettingsController(NSObject):
         priority_surface = ui_style.make_surface(10, PALETTE["row"], PALETTE["edge"])
         priority_surface.setFrame_(NSMakeRect(24, 74, 710, 44))
         view.addSubview_(priority_surface)
-        self.label(view, "优先级：环境变量 > 用户 env > 项目 .env > 内置；两组生成密钥同时存在时 OpenAI 优先。\n清空此文件的密钥不屏蔽其他来源；切换服务需清除原来源中的优先密钥。", 36, 80, 686, 32, 11, PALETTE["muted"])
+        self.label(view, "优先级：环境变量 > 用户 env > 项目 .env > 内置；多组生成密钥同时存在时 OpenAI > Anthropic > AI/ML API。\n清空此文件的密钥不屏蔽其他来源；切换服务需清除原来源中的优先密钥。", 36, 80, 686, 32, 11, PALETTE["muted"])
         self.status = self.label(view, "测试会发送固定问候语，不读取聊天内容；可能产生少量服务费用。", 24, 26, 550, 38, 11, PALETTE["muted"])
         self.set_status(self.status.stringValue())
         self.save_button = self.button(view, "保存配置", "saveSettings:", 602, 29, 132, True)
@@ -368,11 +369,14 @@ class SettingsController(NSObject):
         else:
             oai = userconfig.provider("OPENAI")
             anth = userconfig.provider("ANTHROPIC")
-            selected = "OPENAI" if oai["key"] else "ANTHROPIC" if anth["key"] else None
+            aiml = userconfig.provider("AIMLAPI")
+            selected = ("OPENAI" if oai["key"] else "ANTHROPIC" if anth["key"]
+                        else "AIMLAPI" if aiml["key"] else None)
             if selected:
-                name = "OpenAI 兼容" if selected == "OPENAI" else "Anthropic 兼容"
+                name = {"OPENAI": "OpenAI 兼容", "ANTHROPIC": "Anthropic 兼容",
+                        "AIMLAPI": "AI/ML API"}[selected]
                 summary = "本次启动：正在使用自己的密钥（" + name + "）"
-                source = (oai if selected == "OPENAI" else anth)["source"]
+                source = {"OPENAI": oai, "ANTHROPIC": anth, "AIMLAPI": aiml}[selected]["source"]
                 if selected != prefix:
                     source += "；本页服务当前未启用"
             else:
@@ -529,7 +533,7 @@ class SettingsController(NSObject):
                         raise ValueError("填写密钥后，请同时填写该服务的地址和模型。")
             for key, value in changes.items():
                 if key.endswith("_BASE_URL") and value:
-                    config.validate_endpoint(value)
+                    config.validate_service_endpoint(key.removesuffix("_BASE_URL"), value)
             if changes:
                 self.original = config.write_settings(self.path, self.original, changes)
         except ValueError as e:
@@ -580,13 +584,13 @@ class SettingsController(NSObject):
         prefix = config.PREFIXES[index]
         values = self.values(prefix)
         try:
-            config.validate_endpoint(values["BASE_URL"])
+            config.validate_service_endpoint(prefix, values["BASE_URL"])
             if not values["API_KEY"]:
                 raise ValueError("请填写密钥；Ollama 可填写 ollama。")
             if not listing and not values["MODEL"].strip():
                 raise ValueError("请填写模型后再测试。")
             extra = None
-            if not listing and prefix == "OPENAI":
+            if not listing and prefix in ("OPENAI", "AIMLAPI"):
                 # Match generation's current extra-body setting, without changing it.
                 raw = userconfig.get("OPENAI_EXTRA_BODY") or builtin.EXTRA_BODY
                 extra = json.loads(raw) if raw else {}

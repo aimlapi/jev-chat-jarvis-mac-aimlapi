@@ -2835,9 +2835,10 @@ def warn_if_no_generation_key() -> None:
     script = (
         'display alert "生成层还没配 Key，候选回复会是空的" message "'
         "意图和风险判断不受影响 —— 那部分跑在本地模型上，不需要 Key。\\n\\n"
-        f"在下面的文件里填这两组中的任意一组（二选一即可），然后重启本应用：\\n{path}\\n\\n"
+        f"在下面的文件里填这几组中的任意一组（任选其一），然后重启本应用：\\n{path}\\n\\n"
         "    OPENAI_API_KEY      （任意 OpenAI 兼容端点，如 DeepSeek）\\n"
-        '    ANTHROPIC_API_KEY   （任意 Anthropic 兼容端点，如智谱）" as informational'
+        "    ANTHROPIC_API_KEY   （任意 Anthropic 兼容端点，如智谱）\\n"
+        '    AIMLAPI_API_KEY     （AI/ML API，一个密钥用多家模型）" as informational'
     )
     try:
         subprocess.Popen(["osascript", "-e", script],
