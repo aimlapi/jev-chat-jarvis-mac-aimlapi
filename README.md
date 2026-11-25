@@ -134,10 +134,14 @@ cat > ~/.config/jev-jarvis/env <<'ENV'
 # 判断层（可选）：TypeSafe Jev，不填用本地 decider-2b
 export TYPESAFE_API_KEY=""
 
-# 生成层：任意 OpenAI 兼容端点
-export OPENAI_API_KEY="sk-你的key"
-export OPENAI_BASE_URL="https://api.deepseek.com"
-export OPENAI_MODEL="deepseek-chat"
+# 生成层（推荐）：AI/ML API，一个密钥用多家模型，地址固定
+export AIMLAPI_API_KEY="你的key"
+export AIMLAPI_MODEL="deepseek/deepseek-chat"
+
+# 或：任意 OpenAI 兼容端点（填了 key 就优先于上面那组）
+#export OPENAI_API_KEY="sk-你的key"
+#export OPENAI_BASE_URL="https://api.deepseek.com"
+#export OPENAI_MODEL="deepseek-chat"
 # 端点的思考模式要靠额外字段关时填（Qwen3 这类不关会慢几十倍）
 # export OPENAI_EXTRA_BODY='{"enable_thinking":false}'
 ENV
